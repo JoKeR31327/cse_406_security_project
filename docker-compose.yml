@@ -1,0 +1,111 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway.Dockerfile
+    container_name: cse406_gateway
+    hostname: gateway
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      ot_net:
+        ipv4_address: 10.0.1.1
+      ext_net:
+        ipv4_address: 10.0.2.1
+    volumes:
+      - ./gateway:/app/gateway
+      - ./scripts:/app/scripts
+    command: /bin/bash -c "/app/scripts/setup_routes.sh gateway && tail -f /dev/null"
+    restart: unless-stopped
+
+  rtu:
+    build:
+      context: .
+      dockerfile: docker/rtu.Dockerfile
+    container_name: cse406_rtu
+    hostname: rtu
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      ot_net:
+        ipv4_address: 10.0.1.20
+    volumes:
+      - ./rtu:/app/rtu
+      - ./scripts:/app/scripts
+    depends_on:
+      - gateway
+    command: /bin/bash -c "/app/scripts/setup_routes.sh rtu && python3 -u /app/rtu/rfc793_server.py"
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: docker/client.Dockerfile
+    container_name: cse406_client
+    hostname: client
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      ot_net:
+        ipv4_address: 10.0.1.10
+    volumes:
+      - ./client:/app/client
+      - ./scripts:/app/scripts
+    depends_on:
+      - rtu
+    command: /bin/bash -c "/app/scripts/setup_routes.sh client && python3 -u /app/client/scada_hmi.py"
+    restart: unless-stopped
+
+  attacker:
+    build:
+      context: .
+      dockerfile: docker/attacker.Dockerfile
+    container_name: cse406_attacker
+    hostname: attacker
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      ext_net:
+        ipv4_address: 10.0.2.50
+    volumes:
+      - ./attacker:/app/attacker
+      - ./scripts:/app/scripts
+    depends_on:
+      - gateway
+    command: /bin/bash -c "/app/scripts/setup_routes.sh attacker && tail -f /dev/null"
+    restart: unless-stopped
+
+networks:
+  ot_net:
+    name: cse406_ot_net
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.1.0/24
+          gateway: 10.0.1.254
+  ext_net:
+    name: cse406_ext_net
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.2.0/24
+          gateway: 10.0.2.254
+

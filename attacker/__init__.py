@@ -1,0 +1,3 @@
+"""
+Attacker module initialization.
+"""

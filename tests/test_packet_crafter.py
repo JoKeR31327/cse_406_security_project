@@ -22,7 +22,7 @@ def test_craft_ipv4_header_structure():
     assert ident == 0x1337
     assert flags_frag == 0x4000  # DF set
     assert ttl == 64
-    assert proto == 6  # TCP
+    assert proto == 6            # TCP
     assert src_b == socket.inet_aton(src_ip)
     assert dst_b == socket.inet_aton(dst_ip)
 
@@ -55,6 +55,6 @@ def test_craft_tcp_header_structure():
     assert d_port == 23
     assert s_num == seq_num
     assert a_num == ack_num
-    assert offset_res == 0x50  # 5 * 4 = 20 bytes
-    assert flags == 0x14  # RST + ACK
+    assert offset_res == 0x50    # 5 words * 4 bytes = 20 bytes
+    assert flags == 0x14         # RST + ACK
     assert win == 0

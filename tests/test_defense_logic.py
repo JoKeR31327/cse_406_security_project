@@ -8,13 +8,13 @@ def test_rfc793_in_window_logic():
     rcv_nxt = 1000000
     window = 65535
 
-    # 1. Exact hit
+    # 1. Exact match at start of receive window
     assert (1000000 - rcv_nxt) % (2**32) < window
-    # 2. In-window boundary
+    # 2. Right at the upper boundary inside the window
     assert (1065534 - rcv_nxt) % (2**32) < window
-    # 3. Out-of-window
+    # 3. Outside the receive window (should be rejected)
     assert (1065535 - rcv_nxt) % (2**32) >= window
-    # 4. Wrap-around 32-bit case
+    # 4. Handle 32-bit sequence number wrap-around
     rcv_nxt_wrap = 4294960000
     seg_seq_wrapped = 10000
     assert (seg_seq_wrapped - rcv_nxt_wrap) % (2**32) < window
@@ -30,7 +30,7 @@ def test_quarantine_buffer_lru():
 
     assert len(buf) == 64
 
-    # Add 65th entry and evict oldest
+    # Adding an entry past capacity should evict the oldest entry (FIFO / LRU)
     if len(buf) >= max_size:
         oldest_k, oldest_v = buf.popitem(last=False)
         assert oldest_k == "session_0"
@@ -42,7 +42,7 @@ def test_quarantine_buffer_lru():
 
 
 def test_telnet_iac_detection():
-    # IAC (0xFF) DO (0xFD) TERMINAL_TYPE (0x18)
+    # Valid Telnet option negotiation contains IAC (0xFF)
     legitimate_telnet_payload = b"\xff\xfd\x18\xff\xfb\x01"
     raw_probe_payload = b"GET / HTTP/1.1\r\n"
 

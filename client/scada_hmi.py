@@ -10,7 +10,7 @@ import sys
 RTU_IP = "10.0.1.20"
 RTU_PORT = 23
 CLIENT_SOURCE_PORT = 49152
-POLL_INTERVAL = 3.0  # SCADA quiescent interval: 3 seconds (Delta SEQ = 0)
+POLL_INTERVAL = 3.0  # 3-second quiet interval between telemetry polls (Delta SEQ = 0)
 
 
 def run_scada_client():
@@ -27,6 +27,7 @@ def run_scada_client():
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
+                # Bind specifically to the known industrial client port
                 sock.bind(("", CLIENT_SOURCE_PORT))
             except Exception as e:
                 print(f"[SCADA-HMI] Note: bind to specific port: {e}")
@@ -64,7 +65,7 @@ def run_scada_client():
             print("[SCADA-HMI] [!] Connection closed by foreign host.")
             print("!" * 65)
 
-            # Subsequent query attempt to trigger RTU unsolicited RST
+            # Check if socket is dead on the server side (expecting server rejection)
             print("[SCADA-HMI] Attempting immediate follow-up query to verify socket state...")
             try:
                 test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

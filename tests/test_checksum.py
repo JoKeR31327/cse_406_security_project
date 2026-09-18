@@ -6,11 +6,11 @@ from attacker.checksum import rfc1071_checksum, compute_ip_checksum, compute_tcp
 
 
 def test_rfc1071_basic():
-    # Test with standard known byte stream
+    # Verify standard checksum computation against a known IPv4 header slice
     test_data = b"\x45\x00\x00\x3c\x1c\x46\x40\x00\x40\x06\x00\x00\xac\x10\x0a\x63\xac\x10\x0a\x0c"
     chk = rfc1071_checksum(test_data)
     assert 0 <= chk <= 0xFFFF
-    # Placing checksum back into stream should result in 0 or 0xFFFF
+    # Re-inserting the computed checksum back into the header should sum to 0 or 0xFFFF
     verified_data = test_data[:10] + chk.to_bytes(2, "big") + test_data[12:]
     res = rfc1071_checksum(verified_data)
     assert res == 0 or res == 0xFFFF

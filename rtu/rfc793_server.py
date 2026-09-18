@@ -11,32 +11,33 @@ import socket
 import threading
 from scapy.all import sniff, IP, TCP, Raw, send, conf
 
+# Keep scapy quiet
 conf.verb = 0
 
 LISTEN_PORT = 23
 RTU_IP = "10.0.1.20"
 WINDOW_SIZE = 65535
-TIMER_TICK_RATE = 250000  # 250,000 ISN ticks per second
+TIMER_TICK_RATE = 250000  # 250,000 ISN ticks per second (simulating 4us timer clock)
 BASE_ISN = 1000000000
 
-# Session State Storage
-# Key: (client_ip, client_port) -> Dict of session attributes
+# Tracks active client sessions: (client_ip, client_port) -> session state dictionary
 active_sessions = {}
 sessions_lock = threading.Lock()
 
 
 def get_current_isn() -> int:
-    """Computes predictable linear timer-based ISN."""
+    """Calculates linear timer-based sequence number based on elapsed system time."""
     elapsed = time.time()
     return int(BASE_ISN + (elapsed * TIMER_TICK_RATE)) & 0xFFFFFFFF
 
 
 def send_packet(packet):
-    """Sends a packet via Scapy."""
+    """Utility wrapper for sending packets via scapy."""
     send(packet, verbose=False)
 
 
 def handle_packet(pkt):
+    """Processes incoming IP/TCP packets matching port 23 according to RFC 793."""
     if not pkt.haslayer(IP) or not pkt.haslayer(TCP):
         return
 
@@ -56,7 +57,7 @@ def handle_packet(pkt):
     with sessions_lock:
         session = active_sessions.get(session_key)
 
-        # 1. Handle SYN (Handshake Initiation)
+        # 1. SYN Handshake Initiation
         if flags & 0x02 and not (flags & 0x10):  # Pure SYN
             server_isn = get_current_isn()
             rcv_nxt = (seg_seq + 1) & 0xFFFFFFFF
@@ -83,13 +84,13 @@ def handle_packet(pkt):
             send_packet(syn_ack)
             return
 
-        # 2. Handle RST (Reset Processing per RFC 793)
+        # 2. Reset (RST) Processing under RFC 793 rules
         if flags & 0x04:  # RST or RST+ACK
             if not session or session["state"] == "CLOSED":
                 return
 
             rcv_nxt = session["rcv_nxt"]
-            # RFC 793 In-Window Check: RCV.NXT <= SEG.SEQ < RCV.NXT + W
+            # Under RFC 793, an RST is valid if: RCV.NXT <= SEG.SEQ < RCV.NXT + Window
             in_window_diff = (seg_seq - rcv_nxt) & 0xFFFFFFFF
             if in_window_diff < WINDOW_SIZE:
                 session["state"] = "CLOSED"
@@ -107,11 +108,11 @@ def handle_packet(pkt):
                     f"[RTU] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                 )
             else:
-                # Out-of-window RST is silently discarded in RFC 793
+                # Silently ignore out-of-window resets per RFC 793
                 pass
             return
 
-        # 3. Check for Packets on a CLOSED Session (Subsequent Rejection)
+        # 3. Handle queries arriving on an already CLOSED socket
         if session and session["state"] == "CLOSED":
             print(
                 f"[RTU] Subsequent query received from {client_ip}:{client_port} on CLOSED socket. Emitting unsolicited RST."
@@ -129,11 +130,12 @@ def handle_packet(pkt):
             send_packet(unsolicited_rst)
             return
 
-        # 4. Handle Final ACK of Handshake
+        # 4. Complete Handshake on final ACK
         if flags & 0x10 and session and session["state"] == "SYN_RECEIVED":
             session["state"] = "ESTABLISHED"
             print(f"[RTU] Handshake completed with {client_ip}:{client_port}. Session ESTABLISHED.")
-            # Send Telnet Welcome Banner
+            
+            # Send initial Telnet welcome prompt
             banner = b"\r\n--- Industrial RTU Telemetry Console (Telnet RFC 854) ---\r\nReady for polling queries.\r\n> "
             data_pkt = (
                 IP(src=RTU_IP, dst=client_ip)
@@ -151,12 +153,13 @@ def handle_packet(pkt):
             send_packet(data_pkt)
             return
 
-        # 5. Handle SCADA Application Polling Query
+        # 5. Process application data polling queries
         if session and session["state"] == "ESTABLISHED":
             payload_len = len(tcp_layer.payload)
             if payload_len > 0:
                 session["rcv_nxt"] = (session["rcv_nxt"] + payload_len) & 0xFFFFFFFF
-                # Generate Telemetry Register Response
+                
+                # Mock telemetry register payload
                 telemetry_data = (
                     b"\r\n[RTU-TELEMETRY] REG_0x01: PUMP_SPEED=1450_RPM | "
                     b"REG_0x02: TANK_PRESSURE=4.2_BAR | STATUS=NORMAL\r\n> "
@@ -185,7 +188,7 @@ def main():
     print(f"  Linear ISN Clock Rate: {TIMER_TICK_RATE} ticks/sec")
     print("=" * 65)
 
-    # Suppress host kernel automatic RST packets for port 23
+    # Prevent kernel's default TCP stack from sending auto-RSTs since we handle port 23 in user space
     os.system("iptables -A OUTPUT -p tcp --sport 23 --tcp-flags RST RST -j DROP 2>/dev/null || true")
 
     print("[RTU] Listening for incoming network segments on eth0...")

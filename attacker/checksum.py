@@ -1,21 +1,14 @@
 """
-RFC 1071 Checksum Implementation for IPv4 and TCP Pseudo-Header.
-Calculates 16-bit one's complement sum using big-endian serialization.
+RFC 1071 Checksum calculation for IPv4 and TCP.
+Implements the standard 16-bit one's complement sum algorithm.
 """
 import socket
 import struct
 
 
 def rfc1071_checksum(data: bytes) -> int:
-    """
-    Computes the standard RFC 1071 16-bit one's complement checksum.
-    
-    Args:
-        data: Byte buffer to checksum.
-        
-    Returns:
-        16-bit unsigned integer checksum.
-    """
+    """Computes the standard 16-bit one's complement checksum over a byte buffer."""
+    # If buffer length is odd, pad with a trailing zero byte to align on 16-bit words
     if len(data) % 2 != 0:
         data += b"\x00"
 
@@ -24,41 +17,34 @@ def rfc1071_checksum(data: bytes) -> int:
         word = (data[i] << 8) + data[i + 1]
         total += word
 
-    # Fold 32-bit carries into 16 bits
+    # Fold 32-bit carries into the lower 16 bits until no overflow remains
     while total >> 16:
         total = (total & 0xFFFF) + (total >> 16)
 
-    # One's complement
+    # Take one's complement
     return (~total) & 0xFFFF
 
 
 def compute_ip_checksum(ip_header_bytes: bytes) -> int:
     """
-    Computes IPv4 Header Checksum.
-    The checksum field (bytes 10-11) must be zeroed before computation.
+    Computes IPv4 header checksum.
+    The checksum field (offset 10-12) must be zeroed out during computation.
     """
-    # Ensure bytes 10 and 11 are zeroed for checksum calculation
     header_zeroed = ip_header_bytes[:10] + b"\x00\x00" + ip_header_bytes[12:]
     return rfc1071_checksum(header_zeroed)
 
 
 def compute_tcp_checksum(src_ip: str, dst_ip: str, tcp_segment_bytes: bytes) -> int:
     """
-    Computes TCP Checksum over the 12-byte Pseudo-Header + TCP Segment.
-    The checksum field in the TCP segment (bytes 16-17) must be zeroed before computation.
-    
-    Pseudo-Header format (12 bytes):
-    - Source IP Address (4 bytes)
-    - Destination IP Address (4 bytes)
-    - Zero (1 byte)
-    - Protocol (1 byte, TCP = 6)
-    - TCP Length (2 bytes)
+    Computes TCP checksum using the 12-byte IPv4 pseudo-header + TCP segment.
+    The TCP checksum field (offset 16-18) is zeroed out before computing.
     """
     src_ip_bytes = socket.inet_aton(src_ip)
     dst_ip_bytes = socket.inet_aton(dst_ip)
     protocol = 6  # IPPROTO_TCP
     tcp_len = len(tcp_segment_bytes)
 
+    # Build pseudo-header: src_ip, dst_ip, zero, proto, tcp_length
     pseudo_header = struct.pack(
         "!4s4sBBH",
         src_ip_bytes,
@@ -68,7 +54,7 @@ def compute_tcp_checksum(src_ip: str, dst_ip: str, tcp_segment_bytes: bytes) -> 
         tcp_len,
     )
 
-    # Ensure bytes 16 and 17 in TCP header are zeroed
+    # Zero out checksum field (bytes 16 and 17) in the TCP header
     tcp_zeroed = tcp_segment_bytes[:16] + b"\x00\x00" + tcp_segment_bytes[18:]
     data_to_checksum = pseudo_header + tcp_zeroed
 

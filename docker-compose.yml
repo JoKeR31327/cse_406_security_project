@@ -8,6 +8,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONPATH=/app
+    privileged: true
     cap_add:
       - NET_ADMIN
       - NET_RAW
